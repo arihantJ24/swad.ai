@@ -3,8 +3,20 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useCart } from '@/context/CartContext';
 import type { MealItinerary } from '@/lib/gemini';
+
+// Snow particles
+const SNOW = Array.from({ length: 18 }, (_, i) => ({
+    id: i,
+    x: Math.round((i * 29.3 + 7) % 100),
+    size: 2 + ((i * 13) % 5),
+    dur: 11 + ((i * 6) % 11),
+    delay: ((i * 1.9) % 8),
+    sway: 8 + ((i * 11) % 22) * (i % 2 === 0 ? 1 : -1),
+    opacity: 0.1 + ((i * 9) % 25) / 100,
+}));
 
 export default function RecommendationsPage() {
     const router = useRouter();
@@ -12,6 +24,7 @@ export default function RecommendationsPage() {
     const [itineraries, setItineraries] = useState<MealItinerary[]>([]);
     const [mood, setMood] = useState('');
     const [addedCards, setAddedCards] = useState<Set<number>>(new Set());
+    const [yetiCelebrate, setYetiCelebrate] = useState(false);
 
     useEffect(() => {
         const stored = sessionStorage.getItem('yeti-recommendations');
@@ -43,6 +56,9 @@ export default function RecommendationsPage() {
         });
 
         setAddedCards((prev) => new Set([...prev, index]));
+        // Yeti chef celebration
+        setYetiCelebrate(true);
+        setTimeout(() => setYetiCelebrate(false), 3500);
     };
 
     const handleAddSingleItem = (item: { name: string; price: number }, itIndex: number, itemIndex: number) => {
@@ -70,8 +86,27 @@ export default function RecommendationsPage() {
     }
 
     return (
-        <div className="min-h-dvh yeti-gradient relative">
+        <div className="min-h-dvh relative overflow-hidden"
+            style={{ background: 'linear-gradient(135deg, #060a14 0%, #0d1220 40%, #111827 75%, #0c1a27 100%)' }}>
             <div className="mountain-bg opacity-20" />
+
+            {/* Snow */}
+            <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+                {SNOW.map(p => (
+                    <div key={p.id} className="snow-particle"
+                        style={{
+                            left: `${p.x}%`,
+                            width: `${p.size}px`, height: `${p.size}px`,
+                            '--snow-dur': `${p.dur}s`,
+                            '--snow-delay': `${p.delay}s`,
+                            '--snow-blur': '0.5px',
+                            '--snow-opacity': p.opacity,
+                            '--snow-sway': `${p.sway}px`,
+                            '--snow-sway-dur': `${4 + (p.id % 4)}s`,
+                        } as React.CSSProperties}
+                    />
+                ))}
+            </div>
 
             {/* Header */}
             <nav className="sticky top-0 z-50 flex items-center justify-between px-6 py-4 bg-yeti-bg/80 backdrop-blur-lg border-b border-yeti-border">
@@ -106,9 +141,9 @@ export default function RecommendationsPage() {
                     {itineraries.map((it, i) => (
                         <div
                             key={i}
-                            className={`yeti-card overflow-hidden animate-slide-up bg-black/40 border-yeti-border hover:border-yeti-gold/30 transition-all ${addedCards.has(i) ? 'ring-2 ring-yeti-green/50 border-yeti-green/50' : ''
+                            className={`yeti-card overflow-hidden animate-sherpa-arrive bg-black/40 border-yeti-border hover:border-yeti-gold/30 transition-all ${addedCards.has(i) ? 'ring-2 ring-yeti-green/50 border-yeti-green/50' : ''
                                 }`}
-                            style={{ animationDelay: `${i * 0.15}s` }}
+                            style={{ animationDelay: `${i * 0.2}s` }}
                         >
                             {/* Card Header */}
                             <div className="p-6 pb-4">
@@ -211,6 +246,17 @@ export default function RecommendationsPage() {
                     </Link>
                 </div>
             </main>
+
+            {/* Yeti Chef Celebration */}
+            {yetiCelebrate && (
+                <div className="fixed bottom-20 right-4 z-50 animate-yeti-chef flex flex-col items-center gap-1">
+                    <Image src="/swadai-mascot.png" alt="Yeti Chef" width={56} height={56}
+                        className="object-contain" style={{ filter: 'drop-shadow(0 0 12px rgba(212,165,116,0.4))' }} />
+                    <span className="text-[10px] bg-black/80 text-yeti-gold px-2 py-1 rounded-full border border-yeti-gold/20 whitespace-nowrap">
+                        Great choice! 🏔️✨
+                    </span>
+                </div>
+            )}
         </div>
     );
 }

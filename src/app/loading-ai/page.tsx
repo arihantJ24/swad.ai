@@ -2,6 +2,7 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 
 const LOADING_MESSAGES = [
     'Consulting the Himalayan sages...',
@@ -12,11 +13,23 @@ const LOADING_MESSAGES = [
     'Almost there... the feast awaits!',
 ];
 
+// Snow particles for loading page
+const SNOW = Array.from({ length: 15 }, (_, i) => ({
+    id: i,
+    x: Math.round((i * 37.1 + 8) % 100),
+    size: 2 + ((i * 11) % 4),
+    dur: 12 + ((i * 5) % 10),
+    delay: ((i * 2.1) % 7),
+    sway: 8 + ((i * 9) % 20) * (i % 2 === 0 ? 1 : -1),
+    opacity: 0.12 + ((i * 7) % 20) / 100,
+}));
+
 function LoadingContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [messageIndex, setMessageIndex] = useState(0);
     const [dots, setDots] = useState('');
+    const [yetiVisible, setYetiVisible] = useState(false);
 
     useEffect(() => {
         const msgInterval = setInterval(() => {
@@ -27,9 +40,13 @@ function LoadingContent() {
             setDots((prev) => (prev.length >= 3 ? '' : prev + '.'));
         }, 500);
 
+        // Show yeti chef after a moment
+        const yetiTimer = setTimeout(() => setYetiVisible(true), 2000);
+
         return () => {
             clearInterval(msgInterval);
             clearInterval(dotInterval);
+            clearTimeout(yetiTimer);
         };
     }, []);
 
@@ -53,17 +70,13 @@ function LoadingContent() {
                 });
 
                 const data = await res.json();
-
-                // Store in sessionStorage for the recommendations page
                 sessionStorage.setItem('yeti-recommendations', JSON.stringify(data.itineraries));
                 sessionStorage.setItem('yeti-mood', body.mood);
 
-                // Small delay so the animation doesn't feel abrupt
                 await new Promise((r) => setTimeout(r, 1500));
                 router.push('/recommendations');
             } catch (error) {
                 console.error('Error fetching recommendations:', error);
-                // Navigate anyway with fallback data
                 router.push('/recommendations');
             }
         };
@@ -72,23 +85,66 @@ function LoadingContent() {
     }, [router, searchParams]);
 
     return (
-        <div className="min-h-dvh yeti-gradient relative flex items-center justify-center">
+        <div className="min-h-dvh relative flex items-center justify-center overflow-hidden"
+            style={{ background: 'linear-gradient(135deg, #060a14 0%, #0d1220 40%, #111827 75%, #0c1a27 100%)' }}>
             <div className="mountain-bg" />
 
-            {/* Animated circles */}
-            <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-48 h-48 rounded-full border border-yeti-gold/10 animate-ping" style={{ animationDuration: '3s' }} />
-                <div className="absolute w-64 h-64 rounded-full border border-yeti-gold/5 animate-ping" style={{ animationDuration: '4s' }} />
-                <div className="absolute w-80 h-80 rounded-full border border-yeti-gold/3 animate-ping" style={{ animationDuration: '5s' }} />
+            {/* Snow */}
+            <div className="absolute inset-0 z-[1] overflow-hidden pointer-events-none">
+                {SNOW.map(p => (
+                    <div key={p.id} className="snow-particle"
+                        style={{
+                            left: `${p.x}%`,
+                            width: `${p.size}px`, height: `${p.size}px`,
+                            '--snow-dur': `${p.dur}s`,
+                            '--snow-delay': `${p.delay}s`,
+                            '--snow-blur': '0.5px',
+                            '--snow-opacity': p.opacity,
+                            '--snow-sway': `${p.sway}px`,
+                            '--snow-sway-dur': `${5 + (p.id % 3)}s`,
+                        } as React.CSSProperties}
+                    />
+                ))}
+            </div>
+
+            {/* Singing bowl ripples (replaces plain animated circles) */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                {[0, 1, 2, 3, 4].map(i => (
+                    <div key={i} className="bowl-ripple"
+                        style={{
+                            width: 120 + i * 50,
+                            height: 120 + i * 50,
+                            animationDelay: `${i * 0.5}s`,
+                            animationDuration: `${2.5 + i * 0.3}s`,
+                        }}
+                    />
+                ))}
             </div>
 
             <div className="relative z-10 text-center px-8">
-                {/* Spinning mountain icon */}
+                {/* Mountain icon with aurora pulse */}
                 <div className="mb-8 relative">
-                    <div className="text-7xl animate-bounce" style={{ animationDuration: '2s' }}>
-                        🏔️
+                    <div className="w-20 h-20 rounded-2xl flex items-center justify-center relative animate-aurora-pulse mx-auto"
+                        style={{ border: '1px solid rgba(99,102,241,0.2)' }}>
+                        <span className="text-5xl" style={{ animation: 'glow-breathe 3s ease-in-out infinite', display: 'inline-block' }}>
+                            🏔️
+                        </span>
                     </div>
                     <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-16 h-2 bg-yeti-gold/20 rounded-full blur-sm" />
+
+                    {/* Steam rising from the icon */}
+                    {[0, 1, 2].map(j => (
+                        <div key={j} className="steam-curl"
+                            style={{
+                                left: `calc(50% + ${(j - 1) * 14}px)`,
+                                top: -8,
+                                '--steam-w': `${5 + j * 2}px`,
+                                '--steam-h': `${8 + j * 3}px`,
+                                '--steam-dur': `${2 + j * 0.5}s`,
+                                '--steam-delay': `${j * 0.6}s`,
+                            } as React.CSSProperties}
+                        />
+                    ))}
                 </div>
 
                 {/* Loading text */}
@@ -96,12 +152,13 @@ function LoadingContent() {
                     Finding Your Perfect Meal{dots}
                 </h2>
 
-                <p className="text-yeti-muted text-sm mb-8 h-6 transition-all duration-500">
+                <p className="text-yeti-muted text-sm mb-8 h-6 transition-all duration-500"
+                    style={{ animation: 'fade-in-up 0.4s ease-out' }}>
                     {LOADING_MESSAGES[messageIndex]}
                 </p>
 
                 {/* Progress dots */}
-                <div className="flex items-center justify-center gap-2">
+                <div className="flex items-center justify-center gap-2 mb-8">
                     {[0, 1, 2, 3, 4].map((i) => (
                         <div
                             key={i}
@@ -114,6 +171,15 @@ function LoadingContent() {
                         />
                     ))}
                 </div>
+
+                {/* Yeti Chef Pop-in */}
+                {yetiVisible && (
+                    <div className="animate-yeti-chef flex flex-col items-center gap-2">
+                        <Image src="/swadai-mascot.png" alt="Yeti Chef" width={48} height={48}
+                            className="object-contain" style={{ filter: 'drop-shadow(0 0 12px rgba(212,165,116,0.3))' }} />
+                        <span className="text-xs text-yeti-muted/60 italic">Chef Yeti is cooking...</span>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -122,7 +188,8 @@ function LoadingContent() {
 export default function LoadingAIPage() {
     return (
         <Suspense fallback={
-            <div className="min-h-dvh yeti-gradient flex items-center justify-center">
+            <div className="min-h-dvh flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg, #060a14 0%, #0d1220 40%, #111827 75%, #0c1a27 100%)' }}>
                 <div className="text-4xl animate-bounce">🏔️</div>
             </div>
         }>
