@@ -8,20 +8,16 @@ import { useEffect, useState } from 'react';
 const FOOD_ITEMS = [
     { src: '/food-momos.png', name: 'Steam Momos', price: '₹395', emoji: '🥟', dur: '5s', delay: '0s' },
     { src: '/food-jhol-momos.png', name: 'Jhol Momos', price: '₹525', emoji: '🌶️', dur: '6.5s', delay: '0.8s' },
-    { src: '/food-thali.png', name: 'Thakali Thali', price: '₹645', emoji: '🍱', dur: '4.5s', delay: '1.6s' },
     { src: '/food-thukpa.png', name: 'Thukpa', price: '₹475', emoji: '🍜', dur: '5.5s', delay: '0.4s' },
     { src: '/food-ema-datshi.png', name: 'Ema Datshi', price: '₹525', emoji: '🧀', dur: '7s', delay: '1.2s' },
-    { src: '/food-sekuwa.png', name: 'Sekuwa', price: '₹495', emoji: '🍖', dur: '6s', delay: '2s' },
 ];
 
-// 3 cards on the left edge, 3 on the right edge — kept tightly to the edges
+// 2 cards on the left edge, 2 on the right edge — smaller & less cluttered
 const CARD_LAYOUT = [
-    { side: 'left', left: '0%', top: '18%', rotate: '-5deg', size: 130 },
-    { side: 'left', left: '2%', top: '44%', rotate: '3deg', size: 122 },
-    { side: 'left', left: '0%', top: '70%', rotate: '-4deg', size: 126 },
-    { side: 'right', right: '0%', top: '18%', rotate: '6deg', size: 124 },
-    { side: 'right', right: '1%', top: '44%', rotate: '-5deg', size: 130 },
-    { side: 'right', right: '0%', top: '70%', rotate: '4deg', size: 122 },
+    { side: 'left', left: '-2%', top: '22%', rotate: '-5deg', size: 95 },
+    { side: 'left', left: '0%', top: '56%', rotate: '3deg', size: 90 },
+    { side: 'right', right: '-2%', top: '22%', rotate: '6deg', size: 92 },
+    { side: 'right', right: '0%', top: '56%', rotate: '-4deg', size: 95 },
 ];
 
 const STARS = Array.from({ length: 30 }, (_, i) => ({
@@ -92,6 +88,10 @@ export default function WelcomePage() {
                     <polygon points="0,100 40,52 100,80 150,28 200,62 260,18 320,48 380,35 400,55 400,100" fill="rgba(26,35,50,0.7)" />
                 </svg>
             </div>
+
+            {/* ── Fog overlays on left & right edges ── */}
+            <div className="absolute inset-y-0 left-0 z-[11] pointer-events-none" style={{ width: '30%', background: 'linear-gradient(to right, rgba(6,10,20,0.92) 0%, rgba(6,10,20,0.6) 40%, transparent 100%)' }} />
+            <div className="absolute inset-y-0 right-0 z-[11] pointer-events-none" style={{ width: '30%', background: 'linear-gradient(to left, rgba(6,10,20,0.92) 0%, rgba(6,10,20,0.6) 40%, transparent 100%)' }} />
 
             {/* ── Floating Food Cards (pointer-events-none, absolute, z-10) ── */}
             {mounted && FOOD_ITEMS.map((food, i) => {
@@ -170,7 +170,7 @@ export default function WelcomePage() {
 
             {/* ── Hero Content ── */}
             <main className="relative z-20 flex-1 flex flex-col items-center justify-center text-center"
-                style={{ paddingLeft: 'max(144px, 37vw)', paddingRight: 'max(144px, 37vw)', paddingTop: 8, paddingBottom: 8 }}>
+                style={{ paddingLeft: 'max(110px, 30vw)', paddingRight: 'max(110px, 30vw)', paddingTop: 8, paddingBottom: 8 }}>
 
                 {/* Ambient center glow */}
                 <div className="absolute rounded-full pointer-events-none"
