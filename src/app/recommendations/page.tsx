@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -21,23 +21,26 @@ const SNOW = Array.from({ length: 18 }, (_, i) => ({
 export default function RecommendationsPage() {
     const router = useRouter();
     const { addItem, itemCount } = useCart();
-    const [itineraries, setItineraries] = useState<MealItinerary[]>([]);
-    const [mood, setMood] = useState('');
+    const [itineraries] = useState<MealItinerary[]>(() => {
+        if (typeof window === 'undefined') return [];
+        const stored = sessionStorage.getItem('yeti-recommendations');
+        if (!stored) return [];
+        try {
+            return JSON.parse(stored) as MealItinerary[];
+        } catch {
+            return [];
+        }
+    });
+    const [mood] = useState(() => {
+        if (typeof window === 'undefined') return '';
+        return sessionStorage.getItem('yeti-mood') || '';
+    });
+    const [error] = useState<string>(() => {
+        if (typeof window === 'undefined') return '';
+        return sessionStorage.getItem('yeti-recommendations-error') || '';
+    });
     const [addedCards, setAddedCards] = useState<Set<number>>(new Set());
     const [yetiCelebrate, setYetiCelebrate] = useState(false);
-
-    useEffect(() => {
-        const stored = sessionStorage.getItem('yeti-recommendations');
-        const storedMood = sessionStorage.getItem('yeti-mood');
-        if (stored) {
-            try {
-                setItineraries(JSON.parse(stored));
-            } catch {
-                // If parsing fails, will show empty state
-            }
-        }
-        if (storedMood) setMood(storedMood);
-    }, []);
 
     const handleAddItinerary = (itinerary: MealItinerary, index: number) => {
         const items = [itinerary.main, itinerary.side, itinerary.drink];
@@ -70,6 +73,28 @@ export default function RecommendationsPage() {
             dietary: 'mixed',
         });
     };
+
+    if (error) {
+        return (
+            <div className="min-h-dvh yeti-gradient relative flex flex-col items-center justify-center px-6">
+                <div className="mountain-bg opacity-30" />
+                <div className="relative z-10 text-center bg-black/40 p-8 rounded-3xl backdrop-blur-xl border border-white/10 max-w-md">
+                    <span className="text-6xl mb-4 block">🏔️</span>
+                    <h2 className="font-heading text-2xl font-bold text-yeti-gold mb-3">Couldn&apos;t generate AI paths</h2>
+                    <p className="text-yeti-muted text-sm mb-6 leading-relaxed break-words">
+                        {error}
+                    </p>
+                    <div className="space-y-3">
+                        <Link href="/mood" className="yeti-btn-primary px-10 block">Try Again</Link>
+                        <Link href="/menu" className="yeti-btn-secondary px-10 block">Browse Menu</Link>
+                    </div>
+                    <p className="text-yeti-muted/60 text-[11px] mt-5 leading-relaxed">
+                        If you see a quota / 429 error, enable billing or increase OpenAI API quota for this key/project.
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     if (itineraries.length === 0) {
         return (
@@ -133,7 +158,7 @@ export default function RecommendationsPage() {
                     <h2 className="font-heading text-3xl font-black mb-2 text-white">
                         Curated For <span className="text-yeti-gold">{mood.toUpperCase()}</span>
                     </h2>
-                    <p className="text-yeti-muted text-sm italic">"A journey of a thousand momos begins with a single mood."</p>
+                    <p className="text-yeti-muted text-sm italic">&quot;A journey of a thousand momos begins with a single mood.&quot;</p>
                 </div>
 
                 {/* Itinerary Cards */}

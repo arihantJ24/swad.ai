@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 
 type OrderData = {
@@ -14,16 +14,16 @@ type OrderData = {
 };
 
 export default function ConfirmationPage() {
-    const [order, setOrder] = useState<OrderData | null>(null);
-
-    useEffect(() => {
+    const [order] = useState<OrderData | null>(() => {
+        if (typeof window === 'undefined') return null;
         const stored = sessionStorage.getItem('yeti-order');
-        if (stored) {
-            try {
-                setOrder(JSON.parse(stored));
-            } catch { }
+        if (!stored) return null;
+        try {
+            return JSON.parse(stored) as OrderData;
+        } catch {
+            return null;
         }
-    }, []);
+    });
 
     if (!order) {
         return (

@@ -69,14 +69,30 @@ function LoadingContent() {
                     body: JSON.stringify(body),
                 });
 
-                const data = await res.json();
-                sessionStorage.setItem('yeti-recommendations', JSON.stringify(data.itineraries));
+                const data = await res.json().catch(() => ({}));
                 sessionStorage.setItem('yeti-mood', body.mood);
+
+                if (!res.ok) {
+                    const errMsg =
+                        typeof data?.error === 'string'
+                            ? data.error
+                            : `Failed to generate recommendations (HTTP ${res.status})`;
+                    sessionStorage.removeItem('yeti-recommendations');
+                    sessionStorage.setItem('yeti-recommendations-error', errMsg);
+                } else {
+                    sessionStorage.removeItem('yeti-recommendations-error');
+                    sessionStorage.setItem('yeti-recommendations', JSON.stringify(data.itineraries ?? []));
+                }
 
                 await new Promise((r) => setTimeout(r, 1500));
                 router.push('/recommendations');
             } catch (error) {
                 console.error('Error fetching recommendations:', error);
+                sessionStorage.removeItem('yeti-recommendations');
+                sessionStorage.setItem(
+                    'yeti-recommendations-error',
+                    error instanceof Error ? error.message : 'Failed to generate recommendations'
+                );
                 router.push('/recommendations');
             }
         };

@@ -84,7 +84,6 @@ function useFadeIn(delayMs: number) {
 
 export default function WelcomePage() {
     const { itemCount } = useCart();
-    const [mounted, setMounted] = useState(false);
     const [activeFood, setActiveFood] = useState(0);
     const [sparkles, setSparkles] = useState<Array<{ id: number; x: number; y: number; sx: number; sy: number }>>([]);
     const primaryBtnRef = useRef<HTMLAnchorElement>(null);
@@ -97,7 +96,6 @@ export default function WelcomePage() {
     const showTicker = useFadeIn(960);
 
     useEffect(() => {
-        setMounted(true);
         const t = setInterval(() => setActiveFood(p => (p + 1) % FOOD_ITEMS.length), 2500);
         return () => clearInterval(t);
     }, []);
@@ -146,7 +144,7 @@ export default function WelcomePage() {
             </div>
 
             {/* ── Snow / Mist Drift (Multi-layer parallax) ── */}
-            {mounted && (
+            {(
                 <div className="absolute inset-0 z-[1] overflow-hidden pointer-events-none">
                     {SNOW_PARTICLES.map(p => (
                         <div key={p.id} className="snow-particle"
@@ -167,7 +165,7 @@ export default function WelcomePage() {
             )}
 
             {/* ── Mist / Fog Layers ── */}
-            {mounted && (
+            {(
                 <div className="absolute inset-0 z-[2] overflow-hidden pointer-events-none">
                     {MIST_LAYERS.map(m => (
                         <div key={m.id} className="mist-layer"
@@ -194,7 +192,7 @@ export default function WelcomePage() {
             </div>
 
             {/* ── Prayer Flags (top edge) ── */}
-            {mounted && (
+            {(
                 <div className="absolute top-[52px] left-0 right-0 z-[3] pointer-events-none flex items-start justify-center overflow-hidden"
                     style={{ height: 20 }}>
                     {/* String line */}
@@ -225,7 +223,7 @@ export default function WelcomePage() {
                     <polygon points="0,120 60,35 120,70 180,12 240,55 310,5 360,42 400,22 400,120" fill="rgba(15,52,96,0.25)" />
                     <polygon points="0,120 40,56 100,85 150,30 200,66 260,20 320,52 380,38 400,58 400,120" fill="rgba(26,35,50,0.18)" />
                     {/* Glowing summit line */}
-                    {mounted && (
+                    {(
                         <polyline
                             className="summit-line"
                             points="0,120 60,35 120,70 180,12 240,55 310,5 360,42 400,22"
@@ -243,7 +241,7 @@ export default function WelcomePage() {
             <div className="absolute inset-y-0 right-0 z-[11] pointer-events-none" style={{ width: '30%', background: 'linear-gradient(to left, rgba(6,10,20,0.92) 0%, rgba(6,10,20,0.6) 40%, transparent 100%)' }} />
 
             {/* ── Floating Food Cards ── */}
-            {mounted && FOOD_ITEMS.map((food, i) => {
+            {FOOD_ITEMS.map((food, i) => {
                 const layout = CARD_LAYOUT[i];
                 const isRight = layout.side === 'right';
                 return (

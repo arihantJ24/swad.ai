@@ -33,10 +33,6 @@ export default function MenuPage() {
     const [showAddedId, setShowAddedId] = useState<number | null>(null);
     const [selectedItemForOptions, setSelectedItemForOptions] = useState<MenuItem | null>(null);
 
-    useEffect(() => {
-        fetchMenu();
-    }, [category, dietary]);
-
     const fetchMenu = async () => {
         setLoading(true);
         try {
@@ -52,6 +48,11 @@ export default function MenuPage() {
         }
         setLoading(false);
     };
+
+    useEffect(() => {
+        fetchMenu();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [category, dietary]);
 
     const filteredItems = menuItems.filter((item) =>
         item.name.toLowerCase().includes(search.toLowerCase())

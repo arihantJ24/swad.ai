@@ -1,6 +1,18 @@
+import { supabase } from '@/lib/supabase';
+import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+function getOpenAIClient(): OpenAI {
+    const key = process.env.OPENAI_API_KEY;
+    if (!key) throw new Error('Missing OPENAI_API_KEY environment variable');
+    return new OpenAI({ apiKey: key });
+}
+
+function getGeminiClient(): GoogleGenerativeAI {
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) throw new Error('Missing GEMINI_API_KEY environment variable');
+    return new GoogleGenerativeAI(key);
+}
 
 export type MealItinerary = {
     name: string;
@@ -24,140 +36,291 @@ export type AIRecommendationRequest = {
     customThought?: string;
 };
 
-const SYSTEM_PROMPT = `You are a Himalayan cuisine expert working at Yeti – The Himalayan Kitchen, a restaurant specializing in authentic Nepali, Tibetan, Bhutanese, and Northeastern Indian cuisine.
+export type AIUsage = {
+    inputTokens: number | null;
+    outputTokens: number | null;
+};
 
-Based on the user's mood and preferences, generate exactly 3 curated meal itineraries. Each itinerary must include:
-- 1 Main dish
-- 1 Side dish
-- 1 Drink
-- 1 Optional Dessert (can be null for some more affordable options)
-- A short sentence on why it matches the user's mood
-- 2 smart add-on suggestions
+/**
+ * Fetch all available menu items from the database and format them into
+ * a structured string the LLM can reason over.
+ */
+async function fetchMenuForPrompt(): Promise<string> {
+    const { data: items, error } = await supabase
+        .from('menu_items')
+        .select('name, category, subcategory, price, dietary, spice_level, description, options')
+        .eq('is_available', true)
+        .order('category')
+        .order('price');
 
-You MUST return valid JSON in this EXACT format (no markdown, no extra text):
+    if (error || !items || items.length === 0) {
+        console.error('Failed to fetch menu from database:', error);
+        return 'Menu could not be loaded – use your best knowledge of Himalayan cuisine.';
+    }
+
+    // Group items by category for a cleaner prompt
+    const grouped: Record<string, typeof items> = {};
+    for (const item of items) {
+        if (!grouped[item.category]) grouped[item.category] = [];
+        grouped[item.category].push(item);
+    }
+
+    let menuText = '';
+    for (const [category, catItems] of Object.entries(grouped)) {
+        menuText += `\n### ${category}\n`;
+        for (const item of catItems) {
+            const opts = item.options ? ` [Options: ${(item.options as string[]).join(', ')}]` : '';
+            const desc = item.description ? ` – ${item.description}` : '';
+            menuText += `- ${item.name} | ₹${item.price} | ${item.dietary} | Spice ${item.spice_level}/5${desc}${opts}\n`;
+        }
+    }
+
+    return menuText;
+}
+
+function buildSystemPrompt(menuText: string): string {
+    return `You are a Himalayan cuisine expert and meal curator working at Yeti – The Himalayan Kitchen, a restaurant specializing in authentic Nepali, Tibetan, Bhutanese, and Northeastern Indian cuisine.
+
+Your job is to create personalised meal itineraries for customers based on their mood, dietary needs, spice tolerance, budget, and experience level.
+
+## RULES
+1. You MUST only recommend dishes that appear in the MENU below – never invent dishes.
+2. Each itinerary must contain EXACTLY:
+   - 1 Main dish (from Main Course, Platters, Thalis, Bhutanese, Momos, Thukpa, or Noodles)
+   - 1 Side dish (from Appetizers, Breads, Rice, or a lighter category)
+   - 1 Drink (from Beverages, Mocktails, or Tea/Coffee)
+   - 1 Optional Dessert (from Shakes or Beverages – can be null for budget-friendly options)
+   - A "why_it_matches" sentence connecting the meal to the user's stated mood/vibe
+   - 2 smart add-on suggestions from the menu
+3. Respect dietary restrictions STRICTLY (veg/non-veg/vegan/egg).
+4. Respect the spice level – never exceed the user's stated tolerance.
+5. Match the budget range as closely as possible.
+6. Give each itinerary a creative name and a short catchy tagline.
+7. Make the 3 itineraries noticeably different from each other (different cuisines / categories).
+
+## OUTPUT FORMAT
+Return ONLY valid JSON – no markdown fences, no extra text, no explanation.
 {
   "itineraries": [
     {
       "name": "Creative itinerary name",
       "tagline": "A short catchy tagline",
-      "main": { "name": "Dish name", "price": 399, "description": "Short description" },
-      "side": { "name": "Side name", "price": 99, "description": "Short description" },
-      "drink": { "name": "Drink name", "price": 149, "description": "Short description" },
-      "dessert": { "name": "Dessert name", "price": 179, "description": "Short description" },
+      "main": { "name": "Exact dish name from menu", "price": 399, "description": "Short flavour description" },
+      "side": { "name": "Exact dish name from menu", "price": 99, "description": "Short description" },
+      "drink": { "name": "Exact drink name from menu", "price": 149, "description": "Short description" },
+      "dessert": { "name": "Exact dessert name from menu", "price": 179, "description": "Short description" },
       "total": 826,
-      "why_it_matches": "Because this meal...",
+      "why_it_matches": "Because this meal ...",
       "add_ons": [
-        { "name": "Add-on 1", "price": 99 },
-        { "name": "Add-on 2", "price": 149 }
+        { "name": "Exact dish name", "price": 99 },
+        { "name": "Exact dish name", "price": 149 }
       ]
     }
   ]
 }
 
-Use ONLY dishes from the Yeti menu. Here are the available dishes:
-MOMOS: SHABALAY MOMOS (475), ALOO MOMOS (395), NEWARI MOMOS CHA (425-475), SCHEZWAN MOMOS (395-495), STEAM MOMOS BUFF/CHICKEN/MUTTON/PORK (395-425), YETI SPECIAL KOTHEY MOMOS (425-475), JHOL MOMOS (475-525)
-NOODLES: CHOW CHOW (345-425), CHILLI GARLIC CHOW CHOW (395-445), YETI-SPECIAL CHOW CHOW (455), WAI WAI (375-395)
-THUKPA & SOUP: THUKPA (475-525), KEEMA THUKPA (525), MOTHUK (425-525), THENTHUK (475-525), YETI SPECIAL THENTHUK (575), TOMATO SOUP (325)
-APPETIZERS: ALOO SADHEKO (325), CHANA CHIURA (375), ALOO KO ACHAR (325), MUSHROOM CHOILA (475), PANEER TAREKO (455), SUKUTI SADHEKO (475), MACCHA TAREKO (525), SEKUWA (495), CHOILA (495), CHELEY (455), GYUMA (545), CHICKEN LAPHING (455)
-BHUTANESE: EMA DATSHI (525), KEWA DATSHI (525), TSHOEM (555), SHA DATSHI (555)
-PLATTERS/THALI: YETI VEG PLATTER (545), VEG MOMO PLATTER (625), NEPALESE PLATTER (695), HIMALAYAN PLATTER (745), VEG THAKALI THALI (645), NON-VEG THAKALI THALI (745)
-MAINS: ALOO TARKARI (325), PAHADI DAL (455), SAAG PANEER GRAVY (575), KHASI KO LEDO (625), KOKRA KO LEDO (575), PORK BAMBOO SHOOT (575)
-RICE: STEAMED RICE (295), FRIED RICE (395-425), CHILLI GARLIC FRIED RICE (395-445)
-DRINKS: SAMBUCUS (295), VIRGIN MOJITO (295), ICE TEA (275), HIMALAYAN HIGHBALL (295), COLD COFFEE (225), MATCHA (295), SAFFRON KAHWA (225)
+Prices are in Indian Rupees (₹). The "total" field must be the arithmetic sum of main + side + drink + dessert prices.
 
-Prices are in Indian Rupees (₹). Respect the user's dietary restrictions strictly.`;
+## RESTAURANT MENU
+${menuText}`;
+}
 
 export async function getAIRecommendations(
     request: AIRecommendationRequest
 ): Promise<MealItinerary[]> {
-    const isPlaceholder = !process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'your_gemini_api_key_here';
+    // 1. Fetch real menu from the database
+    const menuText = await fetchMenuForPrompt();
 
-    if (isPlaceholder) {
-        console.log('Using placeholder API key, skipping Gemini call and using fallbacks.');
-        return getFallbackRecommendations(request);
-    }
+    // 2. Build the system prompt with real menu data
+    const systemPrompt = buildSystemPrompt(menuText);
+
+    // 3. Build user prompt from preferences
+    const budgetHint = request.budget
+        ? `My budget for the full meal is around ₹${request.budget}.`
+        : '';
 
     const userPrompt = `
-My mood: ${request.mood}
-${request.customThought ? `My thoughts: ${request.customThought}` : ''}
-Meal type: ${request.mealType}
+My mood / vibe right now: ${request.mood}
+${request.customThought ? `Additional thoughts: ${request.customThought}` : ''}
+Meal type I'm looking for: ${request.mealType}
 Dietary preference: ${request.dietary}
-Spice level: ${request.spiceLevel}/5
-Experience with Himalayan food: ${request.experience}
-Budget range: ${request.budget}
+My spice tolerance: ${request.spiceLevel}/5
+My experience with Himalayan food: ${request.experience}
+${budgetHint}
 
-Please suggest 3 meal itineraries that match my mood and preferences.`;
+Please suggest 3 distinct meal itineraries that match my mood and preferences. Remember to use ONLY dishes from the menu provided.`;
 
     try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-        const result = await model.generateContent([
-            { text: SYSTEM_PROMPT },
-            { text: userPrompt },
-        ]);
+        const { text: responseText } = await generateWithProvider({ systemPrompt, userPrompt });
 
-        const responseText = result.response.text();
+        // Extract JSON from the response (handle potential markdown fences)
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error('No JSON found in response');
+        if (!jsonMatch) throw new Error('No JSON found in AI response');
 
         const parsed = JSON.parse(jsonMatch[0]);
-        return parsed.itineraries;
+
+        if (!parsed.itineraries || !Array.isArray(parsed.itineraries)) {
+            throw new Error('Response missing itineraries array');
+        }
+
+        // Validate & sanitise each itinerary
+        const itineraries: MealItinerary[] = parsed.itineraries.map((it: Record<string, unknown>) => ({
+            name: String(it.name || 'Himalayan Feast'),
+            tagline: String(it.tagline || 'A curated meal just for you'),
+            main: sanitiseDish(it.main as Record<string, unknown>),
+            side: sanitiseDish(it.side as Record<string, unknown>),
+            drink: sanitiseDish(it.drink as Record<string, unknown>),
+            dessert: it.dessert ? sanitiseDish(it.dessert as Record<string, unknown>) : null,
+            total: Number(it.total) || 0,
+            why_it_matches: String(it.why_it_matches || ''),
+            add_ons: Array.isArray(it.add_ons)
+                ? (it.add_ons as Record<string, unknown>[]).map((a) => ({
+                    name: String(a.name || ''),
+                    price: Number(a.price) || 0,
+                }))
+                : [],
+        }));
+
+        // Recalculate totals to be correct
+        for (const it of itineraries) {
+            it.total =
+                it.main.price +
+                it.side.price +
+                it.drink.price +
+                (it.dessert?.price ?? 0);
+        }
+
+        console.log(`✅ AI returned ${itineraries.length} itineraries for mood: "${request.mood}"`);
+        return itineraries;
     } catch (error) {
-        console.error('Gemini API error:', error);
-        return getFallbackRecommendations(request);
+        console.error('AI API error:', error);
+        throw error;
     }
 }
 
-function getFallbackRecommendations(
+export async function getAIRecommendationsWithUsage(
     request: AIRecommendationRequest
-): MealItinerary[] {
-    const isVeg = request.dietary === 'veg' || request.dietary === 'vegan';
+): Promise<{ itineraries: MealItinerary[]; usage: AIUsage }> {
+    // 1. Fetch real menu from the database
+    const menuText = await fetchMenuForPrompt();
 
-    return [
-        {
-            name: 'The Thakali Tradition',
-            tagline: 'A wholesome Himalayan feast',
-            main: isVeg
-                ? { name: 'VEG THAKALI THALI', price: 645, description: 'Traditional multi-item vegetarian platter' }
-                : { name: 'NON-VEG THAKALI THALI', price: 745, description: 'Traditional platter with choice of meat curry' },
-            side: { name: 'ALOO SADHEKO', price: 325, description: 'Tangy sautéed spiced potatoes' },
-            drink: { name: 'VIRGIN MOJITO', price: 295, description: 'Refreshing lime and mint cooler' },
-            dessert: { name: 'SAFFRON KAHWA', price: 225, description: 'Warm spiced saffron tea' },
-            total: isVeg ? 1490 : 1590,
-            why_it_matches: 'The Thakali Thali represents the heart of Himalayan dining, perfect for a complete experience.',
-            add_ons: [
-                { name: 'ROTI', price: 55 },
-                { name: 'ALOO KO ACHAR', price: 325 },
-            ],
-        },
-        {
-            name: 'Momo Trail Journey',
-            tagline: 'Dumplings from the roof of the world',
-            main: isVeg
-                ? { name: 'YETI SPECIAL KOTHEY MOMOS (Veg)', price: 425, description: 'Signature pan-fried dumplings' }
-                : { name: 'JHOL MOMOS (Non-Veg)', price: 525, description: 'Momos in spicy nepali soyabean broth' },
-            side: { name: 'VEG LAPHING', price: 395, description: 'Spicy Tibetan cold green gram noodles' },
-            drink: { name: 'ICE TEA', price: 275, description: 'Chilled iced tea' },
-            dessert: null,
-            total: isVeg ? 1095 : 1195,
-            why_it_matches: 'Discover the iconic taste of the Himalayas with this momo-centric pairing.',
-            add_ons: [
-                { name: 'SCHEZWAN MOMOS', price: 495 },
-                { name: 'TINGMO', price: 95 },
-            ],
-        },
-        {
-            name: 'Bhutanese Cheese Quest',
-            tagline: 'Rich, comforting, and spicy',
-            main: { name: 'EMA DATSHI', price: 525, description: 'Spicy Bhutanese chilli cheese curry' },
-            side: { name: 'TINGMO', price: 95, description: 'Soft fluffy steamed buns' },
-            drink: { name: 'SAMBUCUS', price: 295, description: 'Elderflower and cucumber cooler' },
-            dessert: { name: 'KIT-KAT SHAKE', price: 275, description: 'Sweet chocolate treat' },
-            total: 1190,
-            why_it_matches: 'Experience the unique cheesy heat of Bhutanese cuisine, balanced with soft breads.',
-            add_ons: [
-                { name: 'KEWA DATSHI', price: 525 },
-                { name: 'MUSHROOM CHOILA', price: 475 },
-            ],
-        },
-    ];
+    // 2. Build the system prompt with real menu data
+    const systemPrompt = buildSystemPrompt(menuText);
+
+    // 3. Build user prompt from preferences
+    const budgetHint = request.budget
+        ? `My budget for the full meal is around ₹${request.budget}.`
+        : '';
+
+    const userPrompt = `
+My mood / vibe right now: ${request.mood}
+${request.customThought ? `Additional thoughts: ${request.customThought}` : ''}
+Meal type I'm looking for: ${request.mealType}
+Dietary preference: ${request.dietary}
+My spice tolerance: ${request.spiceLevel}/5
+My experience with Himalayan food: ${request.experience}
+${budgetHint}
+
+Please suggest 3 distinct meal itineraries that match my mood and preferences. Remember to use ONLY dishes from the menu provided.`;
+
+    const { text: responseText, usage } = await generateWithProvider({ systemPrompt, userPrompt });
+
+    // Extract JSON from the response (handle potential markdown fences)
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON found in AI response');
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!parsed.itineraries || !Array.isArray(parsed.itineraries)) {
+        throw new Error('Response missing itineraries array');
+    }
+
+    // Validate & sanitise each itinerary
+    const itineraries: MealItinerary[] = parsed.itineraries.map((it: Record<string, unknown>) => ({
+        name: String(it.name || 'Himalayan Feast'),
+        tagline: String(it.tagline || 'A curated meal just for you'),
+        main: sanitiseDish(it.main as Record<string, unknown>),
+        side: sanitiseDish(it.side as Record<string, unknown>),
+        drink: sanitiseDish(it.drink as Record<string, unknown>),
+        dessert: it.dessert ? sanitiseDish(it.dessert as Record<string, unknown>) : null,
+        total: Number(it.total) || 0,
+        why_it_matches: String(it.why_it_matches || ''),
+        add_ons: Array.isArray(it.add_ons)
+            ? (it.add_ons as Record<string, unknown>[]).map((a) => ({
+                name: String(a.name || ''),
+                price: Number(a.price) || 0,
+            }))
+            : [],
+    }));
+
+    // Recalculate totals to be correct
+    for (const it of itineraries) {
+        it.total = it.main.price + it.side.price + it.drink.price + (it.dessert?.price ?? 0);
+    }
+
+    return { itineraries, usage };
+}
+
+/** Safely extract a dish object from the LLM response */
+function sanitiseDish(d: Record<string, unknown> | undefined | null): {
+    name: string;
+    price: number;
+    description: string;
+} {
+    if (!d) return { name: 'Unknown', price: 0, description: '' };
+    return {
+        name: String(d.name || 'Unknown'),
+        price: Number(d.price) || 0,
+        description: String(d.description || ''),
+    };
+}
+
+// Note: no static fallbacks here — this project should always generate via LLM
+
+async function generateWithProvider({
+    systemPrompt,
+    userPrompt,
+}: {
+    systemPrompt: string;
+    userPrompt: string;
+}): Promise<{ text: string; usage: AIUsage }> {
+    // Prefer Gemini if configured; fall back to OpenAI if present.
+    if (process.env.GEMINI_API_KEY) {
+        const gemini = getGeminiClient();
+        const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+        const model = gemini.getGenerativeModel({
+            model: modelName,
+            systemInstruction: systemPrompt,
+        });
+
+        const result = await model.generateContent(userPrompt);
+        const text = result.response.text();
+        const usageMetadata = result.response.usageMetadata;
+        const inputTokens =
+            typeof usageMetadata?.promptTokenCount === 'number'
+                ? usageMetadata.promptTokenCount
+                : null;
+        const outputTokens =
+            typeof usageMetadata?.candidatesTokenCount === 'number'
+                ? usageMetadata.candidatesTokenCount
+                : null;
+        return { text, usage: { inputTokens, outputTokens } };
+    }
+
+    const openai = getOpenAIClient();
+    const result = await openai.responses.create({
+        model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+        input: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+        ],
+    });
+    const inputTokens =
+        typeof (result as unknown as { usage?: { input_tokens?: unknown } }).usage?.input_tokens === 'number'
+            ? (result as unknown as { usage: { input_tokens: number } }).usage.input_tokens
+            : null;
+    const outputTokens =
+        typeof (result as unknown as { usage?: { output_tokens?: unknown } }).usage?.output_tokens === 'number'
+            ? (result as unknown as { usage: { output_tokens: number } }).usage.output_tokens
+            : null;
+    return { text: result.output_text, usage: { inputTokens, outputTokens } };
 }
