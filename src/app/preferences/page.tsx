@@ -40,12 +40,13 @@ const STEPS = [
         ],
     },
     {
-        id: 'budget',
-        question: "What's your budget?",
+        id: 'members',
+        question: 'How many members?',
         options: [
-            { label: '💰 ₹200 – ₹400', value: '200-400' },
-            { label: '💎 ₹400 – ₹700', value: '400-700' },
-            { label: '👑 ₹700+', value: '700+' },
+            { label: '🧑 Solo', value: 'solo' },
+            { label: '👥 Couple', value: 'couple' },
+            { label: '👨‍👩‍👧 Family', value: 'family' },
+            { label: '👫 Friends', value: 'friends' },
         ],
     },
 ];
@@ -92,7 +93,7 @@ function PreferencesContent() {
         params.set('dietary', finalAnswers.dietary || 'non-veg');
         params.set('spice', finalAnswers.spice || '3');
         params.set('experience', finalAnswers.experience || 'first-time');
-        params.set('budget', finalAnswers.budget || '400-700');
+        params.set('members', finalAnswers.members || 'solo');
         router.push(`/loading-ai?${params.toString()}`);
     };
 
